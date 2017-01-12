@@ -105,11 +105,16 @@ function calc:execute(exp)
 
 	if tree and tree.kind == "binop" and tree.op == "=" then
 		local var = tree.left.id
+		if not var then
+			return die("invalid variable name")
+		end
 		if self.const[var] then
 			return die("the variable '%s' cannot be modified", var)
 		end
 		exec_tree(tree.right)
-		self.vars[tree.left.id] = pop()
+		local result = pop()
+		self.vars[tree.left.id] = result 
+		print(result)
 	else 
 		exec_tree(tree)
 		local result = pop()
