@@ -23,22 +23,16 @@ function calc:init()
 	
 	-- dictionary of variables
 	self.vars = {}
-	self.vars.pi = 3.141592653
-	self.vars.e  = 2.718281828
+	self.vars.pi  = 3.14159265358979
+	self.vars.e   = 2.71828182845905
+	self.vars.phi = 1.61803398874989
 
 	-- list of vars that can't be modified
 	self.const = {}
 	self.const.e = true
 	self.const.pi = true
+	self.const.phi = true
 
-	-- screen pixels
-	self.screen = {}
-	for i = 1, self.SCREEN_X do
-		self.screen[i] = {}
-		for j = 1, self.SCREEN_Y do
-			table.insert(self.screen[i], {px = " "})
-		end
-	end
 end
 
 function calc:report_error(format, ...)
@@ -53,56 +47,6 @@ end
 function calc:handle_input()
 	self:get_input()
 	self:execute(self.input)
-end
-
-function calc:display()
-	for j = 1, self.SCREEN_X do
-		for i = 1, self.SCREEN_Y do
-			local pixel = self.screen[i][j]
-			io.write(pixel.px .. " ")
-		end
-		print()
-	end
-end
-
-function calc:cls()
-	for i = 1, 100 do
-		print()
-	end
-end
-
-function calc:border()
-	for i = 1, self.SCREEN_X do
-		self.screen[i][1].px = self.BORDER_CHAR
-		self.screen[i][self.SCREEN_Y].px = self.BORDER_CHAR
-	end
-	for i = 1, self.SCREEN_Y do
-		self.screen[1][i].px = self.BORDER_CHAR
-		self.screen[self.SCREEN_X][i].px = self.BORDER_CHAR
-	end
-end
-
-function calc:scroll()
-
-end
-
-function calc:putstr(x, y, str, ...)
-	local dx = constrain(x, 2, self.SCREEN_X - 1)
-	local dy = constrain(y, 2, self.SCREEN_Y - 1)	
-	local formatted = string.format(str, ...)
-	for i = 1, formatted:len() do
-		self.screen[dx][dy].px = formatted:sub(i, i)	
-		dx = dx + 1
-		if dx > self.SCREEN_X - 1 then
-			dy = dy + 1
-			dx = 2
-		end
-		if dy > self.SCREEN_Y - 1 then
-			self:scroll()
-			dy = self.SCREEN_Y - 1
-			dx = 2
-		end
-	end
 end
 
 function calc:execute(exp)
