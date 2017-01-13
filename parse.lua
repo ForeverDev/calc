@@ -3,6 +3,13 @@ local parse = {}
 local function lex(exp)
 	local tokens = {}
 	local i = 1
+
+	local ops = {
+		[">="] = true; 
+		["<="] = true; 
+		["=="] = true;
+	}
+
 	while i <= exp:len() do
 		local c = exp:sub(i, i)
 		if c:match("%d") then
@@ -22,9 +29,21 @@ local function lex(exp)
 				n    = tonumber(num);
 			})
 		elseif c:match("%p") then
+			local nxt = nil
+			if i + 1 <= exp:len() then
+				nxt = exp:sub(i + 1, i + 1)
+			end
+			local word = c
+			if nxt and nxt:match("%p") then
+				local op = c .. nxt
+				if ops[op] then
+					i = i + 1
+					word = op
+				end
+			end
 			table.insert(tokens, {
 				kind = "operator";
-				word = c;
+				word = word;
 			})	
 			i = i + 1
 		elseif c:match("%w") then
@@ -45,20 +64,30 @@ local function lex(exp)
 	return tokens
 end
 
-local function to_tree(tokens)
+local to_tree
+function to_tree(tokens, start, finish)
+
+	start = start or 1
+	finish = finish or #tokens
 	
 	if not tokens then
 		return nil
 	end
 
 	local op_info = {
-		["="] = {1, "right", "binary"};
-		["+"] = {2, "left", "binary"};
-		["-"] = {2, "left", "binary"};
-		["*"] = {3, "left", "binary"};
-		["/"] = {3, "left", "binary"};
-		["%"] = {3, "left", "binary"};
-		["^"] = {4, "right", "binary"};
+		[","] = {1, "left", "binary"};
+		["="] = {2, "right", "binary"};
+		[">"] = {3, "left", "binary"};
+		[">="] = {3, "left", "binary"};
+		["<"] = {3, "left", "binary"};
+		["<="] = {3, "left", "binary"};
+		["=="] = {3, "left", "binary"};
+		["+"] = {4, "left", "binary"};
+		["-"] = {4, "left", "binary"};
+		["*"] = {5, "left", "binary"};
+		["/"] = {5, "left", "binary"};
+		["%"] = {5, "left", "binary"};
+		["^"] = {6, "right", "binary"};
 	}
 	
 	local postfix = {}
@@ -67,10 +96,42 @@ local function to_tree(tokens)
 	local function die(msg, ...)
 		print("error: " .. string.format(msg, ...))
 	end
-
-	for i, v in ipairs(tokens) do
-		if v.kind == "number" or v.kind == "identifier" then
+	
+	local i = start
+	
+	while i <= finish do
+		local v = tokens[i]
+		if v.kind == "number" then
 			table.insert(postfix, v)
+		elseif v.kind == "identifier" then
+			if tokens[i + 1] and tokens[i + 1].word == "(" then
+				-- it is a function call
+				local fname = v.word
+				i = i + 2 -- advance to first token in arg list
+				local a_start = i
+				if not calc.functions[fname] then
+					return die("invalid function '%s'", fname)
+				end	
+				local count = 1
+				while count > 0 do
+					if tokens[i].word == "(" then
+						count = count + 1
+					elseif tokens[i].word == ")" then
+						count = count - 1
+					end
+					if count == 0 then
+						break
+					end
+					i = i + 1
+				end	
+				table.insert(postfix, {
+					kind = "call";
+					name = fname;	
+					args = to_tree(tokens, a_start, i - 1); 
+				})
+			else
+				table.insert(postfix, v)
+			end
 		elseif v.kind == "operator" then
 			if v.word == "(" then
 				table.insert(operators, v)
@@ -115,6 +176,7 @@ local function to_tree(tokens)
 		else
 			return die("unknown token with word '%s'", v.word)
 		end
+		i = i + 1
 	end
 
 	while #operators > 0 do
@@ -138,6 +200,14 @@ local function to_tree(tokens)
 			table.insert(stack, {
 				kind   = "identifier";
 				id	   = v.word;
+				parent = nil;
+				side   = nil;
+			})
+		elseif v.kind == "call" then
+			table.insert(stack, {
+				kind   = "call";
+				name   = v.name;
+				args   = v.args;
 				parent = nil;
 				side   = nil;
 			})
@@ -186,10 +256,15 @@ local function to_tree(tokens)
 end
 
 function parse:print_tree(tree, indent)
+
+	if not tree then
+		return
+	end
+
 	indent = indent or 0
 
-	local function make_indent()
-		for i = 1, indent do
+	local function make_indent(i)
+		for i = 1, indent + (i or 0) do
 			io.write("\t")
 		end
 	end
@@ -207,6 +282,11 @@ function parse:print_tree(tree, indent)
 	elseif tree.kind == "unop" then
 		print(tree.op)
 		self:print_tree(tree.operand, indent + 1)
+	elseif tree.kind == "call" then
+		print("(call)")
+		make_indent(1)
+		print(tree.name)
+		self:print_tree(tree.args, indent + 1)
 	end
 
 end

@@ -27,11 +27,32 @@ function calc:init()
 	self.vars.e   = 2.71828182845905
 	self.vars.phi = 1.61803398874989
 
+	-- dictionary of functions
+	self.functions = {}
+	self.functions.cos = function(state, nargs)
+		state:push_num(math.cos(state:pop_num()))
+	end
+	self.functions.sin = function(state, nargs)
+		state:push_num(math.sin(state:pop_num()))
+	end
+	self.functions.tan = function(state, nargs)
+		state:push_num(math.tan(state:pop_num()))
+	end
+	self.functions.rad = function(state, nargs)
+		state:push_num(math.rad(state:pop_num()))
+	end
+	self.functions.deg = function(state, nargs)
+		state:push_num(math.deg(state:pop_num()))
+	end
+
 	-- list of vars that can't be modified
 	self.const = {}
-	self.const.e = true
-	self.const.pi = true
-	self.const.phi = true
+	for i, v in pairs(self.vars) do
+		self.const[i] = true
+	end
+	for i, v in pairs(self.functions) do
+		self.const[i] = true
+	end
 
 end
 
@@ -54,18 +75,39 @@ function calc:execute(exp)
 	if not tree then
 		return
 	end
+
+	local calc = self
 	
-	local stack = {}
-
-	local function push(n)
-		table.insert(stack, n)
+	local state = {}
+	state.stack = {}
+	
+	function state:push(t)
+		table.insert(self.stack, t)
 	end
 
-	local function pop()
-		return table.remove(stack, #stack)
+	function state:push_num(n)
+		table.insert(self.stack, {
+			kind = "number";
+			n = n;
+		})
 	end
 
-	local function die(msg, ...)
+	function state:push_id(id)
+		table.insert(self.stack, {
+			kind = "identifier";
+			id = id;
+		})
+	end
+	
+	function state:pop()
+		return table.remove(self.stack, #self.stack)
+	end
+
+	function state:pop_num()
+		return table.remove(self.stack, #self.stack).n
+	end
+	
+	function state:die(msg, ...)
 		print("error: " .. string.format(msg, ...))
 	end
 
@@ -74,50 +116,77 @@ function calc:execute(exp)
 			return
 		end
 		if t.kind == "number" then
-			push(t.n)	
+			state:push(t)	
 		elseif t.kind == "identifier" then
-			push(self.vars[t.id] or 0)	
+			if self.functions[t.id] then
+				state:die("'%s' is a function", t.id)
+			end
+			state:push_num(self.vars[t.id] or 0)	
 		elseif t.kind == "binop" then
 			exec_tree(t.left)
 			exec_tree(t.right)
-			local b = pop()	
-			local a = pop()
+			local b = state:pop_num()	
+			local a = state:pop_num()
 			if t.op == "=" then
-				return die("the '=' operator can only be used if it is top-level")
+				return state:die("the '=' operator can only be used if it is top-level")
 			end
 			if t.op == "+" then
-				push(a + b)
+				state:push_num(a + b)
 			elseif t.op == "-" then
-				push(a - b)
+				state:push_num(a - b)
 			elseif t.op == "*" then
-				push(a * b)
+				state:push_num(a * b)
 			elseif t.op == "/" then
-				push(a / b)
+				state:push_num(a / b)
 			elseif t.op == "%" then
-				push(a % b)
+				state:push_num(a % b)
+			elseif t.op == ">" then
+				state:push_num(a > b and 1 or 0)
+			elseif t.op == ">=" then
+				state:push_num(a >= b and 1 or 0)
+			elseif t.op == "<" then
+				state:push_num(a < b and 1 or 0)
+			elseif t.op == "<=" then
+				state:push_num(a <= b and 1 or 0)
+			elseif t.op == "==" then
+				state:push_num(a == b and 1 or 0)
 			elseif t.op == "^" then
-				push(math.pow(a, b))
+				state:push_num(math.pow(a, b))
 			end
 		elseif t.kind == "unop" then
 		
-		end	
+		elseif t.kind == "call" then
+			local fname = t.name
+			local args = t.args	
+			local scan = t.args
+			local nargs = 0
+			if t.args then
+				nargs = 1
+			end
+			while scan and scan.kind == "binop" and scan.op == "," do
+				nargs = nargs + 1
+				scan = scan.left
+			end
+			exec_tree(args)
+			calc.functions[fname](state, nargs)
+		end
 	end
 
 	if tree and tree.kind == "binop" and tree.op == "=" then
 		local var = tree.left.id
 		if not var then
-			return die("invalid variable name")
+			return state:die("invalid variable name")
 		end
 		if self.const[var] then
-			return die("the variable '%s' cannot be modified", var)
+			return state:die("the variable '%s' cannot be modified", var)
 		end
 		exec_tree(tree.right)
-		local result = pop()
+		local result = state:pop_num()
 		self.vars[tree.left.id] = result 
 		print(result)
 	else 
 		exec_tree(tree)
-		local result = pop()
+		local result = state:pop_num()
 		print(result)
 	end
 
